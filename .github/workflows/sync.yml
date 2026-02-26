@@ -1,83 +1,59 @@
 on:
-  schedule:
-    - cron: '30 00,4,8,12,16,20 * * *'  # sync every 4 hours
-  workflow_dispatch:
-
+  workflow_dispatch: {}
 name: sync
-
 jobs:
   sync:
-    runs-on: [ubuntu-latest]
+    runs-on:
+    - ubuntu-latest
     permissions:
-      # for commit changes
       contents: write
     steps:
     - name: checkout
       uses: actions/checkout@v1
       with:
         submodules: true
-
     - name: Setup uv
       uses: astral-sh/setup-uv@v6
       with:
         enable-cache: false
-
     - name: snapshot repo
-      run: |
-          uvx --from ida-hcli hcli plugin --repo github --with-repos-list=known-repositories.txt --with-ignored-repos-list=ignored-repositories.txt repo snapshot > plugin-repository.json
-          cat plugin-repository.json
-          git diff plugin-repository.json
+      run: 'uvx --from ida-hcli hcli plugin --repo github --with-repos-list=known-repositories.txt
+        --with-ignored-repos-list=ignored-repositories.txt repo snapshot > plugin-repository.json
+
+        cat plugin-repository.json
+
+        git diff plugin-repository.json
+
+        '
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         HCLI_DISABLE_UPDATES: 1
         HCLI_DEBUG: 1
         TTY_COMPATIBLE: 0
         TTY_INTERACTIVE: 0
-
     - name: update known repositories
-      run: |
-          # Extract GitHub repository URLs from plugin-repository.json
-          repos=$(jq -r '.plugins[].host' plugin-repository.json | \
-              grep '^https://github.com/' | \
-              sed 's|https://github.com/||' | \
-              tr '[:upper:]' '[:lower:]' | \
-              sort -u)
-
-          # Read existing known repositories (excluding empty lines and comments)
-          existing=$(grep -v '^#' known-repositories.txt | grep -v '^[[:space:]]*$' | tr '[:upper:]' '[:lower:]' | sort -u)
-
-          # Find new repositories (those in plugin-repository.json but not in known-repositories.txt)
-          new_repos=$(comm -23 <(echo "$repos") <(echo "$existing"))
-
-          # Append new repositories if any were found
-          if [ -n "$new_repos" ]; then
-              echo "Found $(echo "$new_repos" | wc -l) new repositories to add:"
-              echo "$new_repos" | sed 's/^/  /'
-              echo "" >> known-repositories.txt
-              echo "# Discovered on $(date '+%Y-%m-%d %H:%M:%S')" >> known-repositories.txt
-              echo "$new_repos" >> known-repositories.txt
-              echo "Successfully appended new repositories to known-repositories.txt"
-          else
-              echo "No new repositories found"
-          fi
-
-          git diff known-repositories.txt
-
+      run: "# Extract GitHub repository URLs from plugin-repository.json\nrepos=$(jq\
+        \ -r '.plugins[].host' plugin-repository.json | \\\n    grep '^https://github.com/'\
+        \ | \\\n    sed 's|https://github.com/||' | \\\n    tr '[:upper:]' '[:lower:]'\
+        \ | \\\n    sort -u)\n\n# Read existing known repositories (excluding empty\
+        \ lines and comments)\nexisting=$(grep -v '^#' known-repositories.txt | grep\
+        \ -v '^[[:space:]]*$' | tr '[:upper:]' '[:lower:]' | sort -u)\n\n# Find new\
+        \ repositories (those in plugin-repository.json but not in known-repositories.txt)\n\
+        new_repos=$(comm -23 <(echo \"$repos\") <(echo \"$existing\"))\n\n# Append\
+        \ new repositories if any were found\nif [ -n \"$new_repos\" ]; then\n   \
+        \ echo \"Found $(echo \"$new_repos\" | wc -l) new repositories to add:\"\n\
+        \    echo \"$new_repos\" | sed 's/^/  /'\n    echo \"\" >> known-repositories.txt\n\
+        \    echo \"# Discovered on $(date '+%Y-%m-%d %H:%M:%S')\" >> known-repositories.txt\n\
+        \    echo \"$new_repos\" >> known-repositories.txt\n    echo \"Successfully\
+        \ appended new repositories to known-repositories.txt\"\nelse\n    echo \"\
+        No new repositories found\"\nfi\n\ngit diff known-repositories.txt\n"
     - name: commit
-      run: |
-        git config --global user.email "bot@example.com"
-        git config --global user.name "Hex-Rays (GH Action)"
-        git add plugin-repository.json known-repositories.txt
-
-        # Generate commit messages with changes summary
-        SUBJECT=$(uv run scripts/summarize_changes.py --short 2>/dev/null || echo "sync plugin-repository.json")
-        BODY=$(uv run scripts/summarize_changes.py 2>/dev/null || echo "")
-
-        if [ -n "$BODY" ]; then
-          git commit -m "$SUBJECT" -m "$BODY" || echo "no changes"
-        else
-          git commit -m "$SUBJECT" || echo "no changes"
-        fi
-
+      run: "git config --global user.email \"bot@example.com\"\ngit config --global\
+        \ user.name \"Hex-Rays (GH Action)\"\ngit add plugin-repository.json known-repositories.txt\n\
+        \n# Generate commit messages with changes summary\nSUBJECT=$(uv run scripts/summarize_changes.py\
+        \ --short 2>/dev/null || echo \"sync plugin-repository.json\")\nBODY=$(uv\
+        \ run scripts/summarize_changes.py 2>/dev/null || echo \"\")\n\nif [ -n \"\
+        $BODY\" ]; then\n  git commit -m \"$SUBJECT\" -m \"$BODY\" || echo \"no changes\"\
+        \nelse\n  git commit -m \"$SUBJECT\" || echo \"no changes\"\nfi\n"
     - name: push
       uses: ad-m/github-push-action@master
