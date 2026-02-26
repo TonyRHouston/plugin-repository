@@ -1,113 +1,108 @@
 name: Deploy content to GitHub Pages
-
 on:
-  workflow_run:
-    workflows: ["sync"]
-    types:
-      - completed
-  workflow_dispatch:
-
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+  workflow_dispatch: {}
 permissions:
   contents: read
   pages: write
   id-token: write
-
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
-
 defaults:
   run:
     shell: bash
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name
+      == 'workflow_dispatch' }}
     env:
       HUGO_VERSION: 0.147.3
     steps:
+    - name: Setup uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: false
+    - name: Install Hugo CLI
+      run: 'wget -O ${{ runner.temp }}/hugo.deb https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb
+        \
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: false
+        && sudo dpkg -i ${{ runner.temp }}/hugo.deb
 
-      - name: Install Hugo CLI
-        run: |
-          wget -O ${{ runner.temp }}/hugo.deb https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb \
-          && sudo dpkg -i ${{ runner.temp }}/hugo.deb
+        '
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Setup Pages
+      id: pages
+      uses: actions/configure-pages@v5
+    - name: Collect content
+      run: 'mkdir -p ./public/
 
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        cp plugin-repository.json ./public/plugin-repository.json
 
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@v5
+        cp tags.json ./public/tags.json
 
-      - name: Collect content
-        run: |
-          mkdir -p ./public/
-          cp plugin-repository.json ./public/plugin-repository.json
-          cp tags.json ./public/tags.json
+        '
+    - name: Generate chart
+      run: 'mkdir -p ./public/resources/
 
-      - name: Generate chart
-        run: |
-          mkdir -p ./public/resources/
-          uv run --script scripts/plugin_count_chart.py . public/resources/repo_size.png
-        
-      - name: Mirror plugin content
-        run: |
-          mkdir -p ./public/plugins/
-          uv run scripts/mirror_plugin_archive_contents.py --no-cache plugin-repository.json public/plugins/
+        uv run --script scripts/plugin_count_chart.py . public/resources/repo_size.png
 
-      - name: Fetch star counts
-        run: |
-          mkdir -p ./public/plugins/
-          uv run scripts/snapshot_github_repo_metadata.py plugin-repository.json public/plugins/
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        '
+    - name: Mirror plugin content
+      run: 'mkdir -p ./public/plugins/
 
-      - name: Summarize logs
-        run: |
-          mkdir -p ./public/logs/
-          uv run scripts/summarize_github_indexer_logs.py --html > public/logs/indexer.html
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COLUMNS: 240
+        uv run scripts/mirror_plugin_archive_contents.py --no-cache plugin-repository.json
+        public/plugins/
 
-      - name: Generate Hugo site
-        run: |
-          mkdir -p ./site/content/
-          uv run scripts/generate_hugo_site.py public/ site/content/
-          cp .github/pages/hugo.toml site/
-          cp -r .github/pages/layouts site/layouts
+        '
+    - name: Fetch star counts
+      run: 'mkdir -p ./public/plugins/
 
-      - name: Hugo build
-        env:
-          HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
-          HUGO_ENVIRONMENT: production
-        run: |
-          hugo \
-            --source site \
-            --baseURL "${{ steps.pages.outputs.base_url }}/_/"
+        uv run scripts/snapshot_github_repo_metadata.py plugin-repository.json public/plugins/
 
-      - name: Collect site
-        run: |
-          mkdir -p ./public/_/
-          rsync -av ./site/public/ ./public/_/
-          rm -rf ./site
+        '
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Summarize logs
+      run: 'mkdir -p ./public/logs/
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./public
+        uv run scripts/summarize_github_indexer_logs.py --html > public/logs/indexer.html
 
+        '
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COLUMNS: 240
+    - name: Generate Hugo site
+      run: 'mkdir -p ./site/content/
+
+        uv run scripts/generate_hugo_site.py public/ site/content/
+
+        cp .github/pages/hugo.toml site/
+
+        cp -r .github/pages/layouts site/layouts
+
+        '
+    - name: Hugo build
+      env:
+        HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
+        HUGO_ENVIRONMENT: production
+      run: "hugo \\\n  --source site \\\n  --baseURL \"${{ steps.pages.outputs.base_url\
+        \ }}/_/\"\n"
+    - name: Collect site
+      run: 'mkdir -p ./public/_/
+
+        rsync -av ./site/public/ ./public/_/
+
+        rm -rf ./site
+
+        '
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./public
   deploy:
     environment:
       name: github-pages
@@ -115,6 +110,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
